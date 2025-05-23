@@ -1,3 +1,6 @@
+import db
+db.init_db()
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from handlers import start_command, help_command, about_command
