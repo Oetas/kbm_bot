@@ -1,11 +1,13 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.logger import log_event
+import db
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    log_event(user.id, f"{user.first_name} запустил /start")
-    await update.message.reply_text("Бот работает! Привет, друг!")
+    db.register_user_if_not_exists(user)            # ← новое
+    db.add_log(user.id, "/start")                   # ← лог в БД
+    await update.message.reply_text("Бот работает! Привет!")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
