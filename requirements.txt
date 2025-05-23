@@ -1,4 +1,5 @@
 python-telegram-bot==20.6
-sqlalchemy
 psycopg2-binary
+sqlalchemy
+
 
