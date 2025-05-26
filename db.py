@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 import datetime, os
+from sqlalchemy import BigInteger
 
 load_dotenv()
 
@@ -37,19 +38,26 @@ def get_events(limit=5):
     conn.close()
     return events
 
-def set_birthday(user_id, date):
+def set_birthday(user_id, date_obj):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE users SET birthday = %s WHERE id = %s;", (date, user_id))
+    cur.execute(
+        "UPDATE users SET birthday = %s WHERE tg_id = %s;",
+        (date_obj, user_id)
+    )
     conn.commit()
+    cur.close()
     conn.close()
+
 
 def set_notify_status(user_id, status):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE users SET notify = %s WHERE id = %s;", (status, user_id))
+    cur.execute("UPDATE users SET notify = %s WHERE tg_id = %s;", (status, user_id))
     conn.commit()
+    cur.close()
     conn.close()
+
 
 
 
@@ -80,7 +88,7 @@ class User(Base):
 class Log(Base):
     __tablename__ = "logs"
     id        = Column(Integer, primary_key=True)
-    tg_id     = Column(Integer)
+    tg_id     = Column(BigInteger)  # <-- Важно!
     action    = Column(String(255))
     ts        = Column(DateTime, default=datetime.datetime.utcnow)
 

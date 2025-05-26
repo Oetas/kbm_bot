@@ -4,6 +4,8 @@ from db import add_event, get_events, set_birthday, set_notify_status, get_or_cr
 from utils.logger import log_user_action
 
 import os
+import datetime
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -54,15 +56,24 @@ async def events_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("\n\n".join(events))
 
+import datetime  # не забудь импортировать
+
 async def birthday_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Формат: /birthday дд.мм.гггг")
         return
 
-    date = context.args[0]
+    input_date = context.args[0]
+    try:
+        date_obj = datetime.datetime.strptime(input_date, "%d.%m.%Y").date()
+    except ValueError:
+        await update.message.reply_text("⚠️ Неверный формат даты. Используй дд.мм.гггг")
+        return
+
     user_id = update.effective_user.id
-    set_birthday(user_id, date)
-    await update.message.reply_text(f"Дата рождения {date} сохранена.")
+    set_birthday(user_id, date_obj)
+    await update.message.reply_text(f"✅ Дата рождения {input_date} сохранена.")
+
 
 async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or context.args[0].lower() not in ["on", "off"]:
