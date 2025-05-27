@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from db import add_event, get_events, set_birthday, set_notify_status, get_or_create_user
+from db import add_event, get_events, update_birthday, update_notify_status, create_or_get_user
 from utils.logger import log_user_action
 
 import os
@@ -20,7 +20,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = user.username or ""
 
     # Сохраняем пользователя в БД
-    get_or_create_user(user_id, first_name, last_name, username)
+    create_or_get_user(update.effective_user)
 
     # Логируем действие
     log_user_action(user_id, "/start")
@@ -71,7 +71,7 @@ async def birthday_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = update.effective_user.id
-    set_birthday(user_id, date_obj)
+    update_birthday(user_id, date_obj)
     await update.message.reply_text(f"✅ Дата рождения {input_date} сохранена.")
 
 
@@ -82,7 +82,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     value = context.args[0].lower() == "on"
     user_id = update.effective_user.id
-    set_notify_status(user_id, value)
+    update_notify_status(user_id, value)
     await update.message.reply_text("Уведомления включены." if value else "Уведомления выключены.")
 
 if __name__ == '__main__':
