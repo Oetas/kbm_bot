@@ -7,60 +7,52 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 import datetime, os
 from sqlalchemy import BigInteger
+from sqlalchemy import Boolean, Date
 
 load_dotenv()
 
-def get_connection():
-    return psycopg2.connect(os.getenv("DB_URL"))
+def get_user(tg_id: int):
+    with SessionLocal() as db:
+        return db.query(User).filter_by(tg_id=tg_id).first()
 
-def get_or_create_user(user_id, first_name, last_name, username):
-    conn = get_connection()
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO users (tg_id, first_name, last_name, username)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (tg_id) DO NOTHING;
-        """, (user_id, first_name, last_name, username))
-        conn.commit()
 
-def add_event(text):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO events (text) VALUES (%s);", (text,))
-    conn.commit()
-    conn.close()
+def create_or_get_user(tg_user):
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(tg_id=tg_user.id).first()
+        if not user:
+            user = User(
+                tg_id=tg_user.id,
+                first_name=tg_user.first_name,
+                last_name=tg_user.last_name,
+                username=tg_user.username
+            )
+            db.add(user)
+            db.commit()
+        return user
+
+def update_birthday(tg_id: int, date_obj):
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(tg_id=tg_id).first()
+        if user:
+            user.birthday = date_obj
+            db.commit()
+
+def update_notify_status(tg_id: int, status: bool):
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(tg_id=tg_id).first()
+        if user:
+            user.notify = status
+            db.commit()
+
+def add_event(text_content):
+    with SessionLocal() as db:
+        db.add(Event(text=text_content))
+        db.commit()
 
 def get_events(limit=5):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT text FROM events ORDER BY id DESC LIMIT %s;", (limit,))
-    events = [row[0] for row in cur.fetchall()]
-    conn.close()
-    return events
-
-def set_birthday(user_id, date_obj):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE users SET birthday = %s WHERE tg_id = %s;",
-        (date_obj, user_id)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-def set_notify_status(user_id, status):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET notify = %s WHERE tg_id = %s;", (status, user_id))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-
-
+    with SessionLocal() as db:
+        events = db.query(Event).order_by(Event.id.desc()).limit(limit).all()
+        return [e.text for e in events]
 
 # строка подключения к бд
 DB_USER = os.getenv("PG_USER", "postgres")
@@ -80,11 +72,18 @@ SessionLocal = sessionmaker(bind=engine)
 class User(Base):
     __tablename__ = "users"
     id          = Column(Integer, primary_key=True, index=True)
-    tg_id       = Column(Integer, unique=True, index=True)
+    tg_id       = Column(BigInteger, unique=True, index=True)  # <-- BigInteger, чтобы влез Telegram ID
     first_name  = Column(String(60))
     last_name   = Column(String(60))
     username    = Column(String(60))
+    notify      = Column(Boolean, default=False)
+    birthday    = Column(Date)
 
+class Event(Base):
+    __tablename__ = "events"
+    id = Column(Integer, primary_key=True)
+    text = Column(String)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 class Log(Base):
     __tablename__ = "logs"
     id        = Column(Integer, primary_key=True)
