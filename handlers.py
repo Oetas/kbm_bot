@@ -1,6 +1,8 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.logger import log_event
+from telegram import Update
+from telegram.ext import ContextTypes
 import db
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -18,3 +20,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Этот бот создан в рамках ВКР. Автор: G.")
+
+
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    print(f"Chat ID: {chat_id}")
+
