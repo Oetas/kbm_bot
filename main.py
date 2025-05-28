@@ -1,16 +1,18 @@
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from db import add_event, get_events, update_birthday, update_notify_status, create_or_get_user
+from db import add_event, get_events, update_birthday, update_notify_status, create_or_get_user, get_today_birthdays
 from utils.logger import log_user_action
-
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 import datetime
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
+GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
+
+scheduler = AsyncIOScheduler()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -28,7 +30,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Приветственное сообщение
     await update.message.reply_text("👋 Привет! Я КБМ Бот. Введи /help для списка команд.")
 
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("/add_event <текст> — добавить мероприятие (только для администраторов)\n"
                                     "/events — список последних мероприятий\n"
@@ -37,7 +38,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_event_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in [552167621]:  #
+    if user_id not in [552167621]:  # <-- Замени на свой Telegram ID
         await update.message.reply_text("Только администратор может добавлять мероприятия.")
         return
 
@@ -56,8 +57,6 @@ async def events_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("\n\n".join(events))
 
-import datetime  # не забудь импортировать
-
 async def birthday_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Формат: /birthday дд.мм.гггг")
@@ -74,6 +73,23 @@ async def birthday_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_birthday(user_id, date_obj)
     await update.message.reply_text(f"✅ Дата рождения {input_date} сохранена.")
 
+async def check_birthdays():
+    bot = Bot(token=TOKEN)
+    users = get_today_birthdays()
+    if not users:
+        return
+
+    names = ", ".join([u.first_name or "Пользователь" for u in users])
+    message = f"🎉 Сегодня день рождения у: {names}!\nДружно поздравляем! 🥳"
+    await bot.send_message(chat_id=GROUP_CHAT_ID, text=message)
+
+    for user in users:
+        if user.notify:
+            try:
+                await bot.send_message(chat_id=user.tg_id,
+                                       text=f"Сегодня твой день! 🎂 С Днём Рождения, {user.first_name}!")
+            except:
+                pass
 
 async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or context.args[0].lower() not in ["on", "off"]:
@@ -85,12 +101,19 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_notify_status(user_id, value)
     await update.message.reply_text("Уведомления включены." if value else "Уведомления выключены.")
 
+async def on_startup(app):
+    # Планировщик: проверка дней рождения каждый день в 16:52
+    scheduler.add_job(check_birthdays, "cron", hour=17, minute=15)
+    scheduler.start()
+
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("add_event", add_event_command))
     app.add_handler(CommandHandler("events", events_command))
     app.add_handler(CommandHandler("birthday", birthday_command))
     app.add_handler(CommandHandler("notify", notify_command))
+
     app.run_polling()
