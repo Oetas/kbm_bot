@@ -8,6 +8,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import datetime, os
 from sqlalchemy import BigInteger
 from sqlalchemy import Boolean, Date
+from datetime import date
+from sqlalchemy import extract
+from models import Session, User
 
 load_dotenv()
 
@@ -36,6 +39,15 @@ def update_birthday(tg_id: int, date_obj):
         if user:
             user.birthday = date_obj
             db.commit()
+
+def get_today_birthdays():
+    today = date.today()
+    with Session() as session:
+        users = session.query(User).filter(
+            extract('day', User.birthday) == today.day,
+            extract('month', User.birthday) == today.month
+        ).all()
+        return users
 
 def update_notify_status(tg_id: int, status: bool):
     with SessionLocal() as db:
