@@ -12,6 +12,8 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 
+ADMIN_IDS = [552167621, 747868890, 552167623, 552167624, 552167625]
+
 scheduler = AsyncIOScheduler()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -38,7 +40,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_event_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in [552167621]:  # <-- Замени на свой Telegram ID
+    if user_id not in ADMIN_IDS:
         await update.message.reply_text("Только администратор может добавлять мероприятия.")
         return
 
