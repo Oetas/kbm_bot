@@ -1,18 +1,27 @@
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from db import add_event, get_events, update_birthday, update_notify_status, create_or_get_user, get_today_birthdays
 from utils.logger import log_user_action
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import psycopg2
 import os
 import datetime
 from dotenv import load_dotenv
+
+DB_PARAMS = {
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT"),
+}
 
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 
-ADMIN_IDS = [552167621, 747868890, 552167623, 552167624, 552167625]
+ADMIN_IDS = [552167621, 747868890, 678405392, 552167624, 552167625]
 
 scheduler = AsyncIOScheduler()
 
@@ -108,6 +117,42 @@ async def on_startup(app):
     scheduler.add_job(check_birthdays, "cron", hour=17, minute=15)
     scheduler.start()
 
+
+from telegram.ext import MessageHandler, filters
+
+# === Новая функция для рассылки сообщений ===
+async def forward_from_thread(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message or not message.text:
+        return
+
+    # Проверка на нужный chat_id и message_thread_id
+    if message.chat.id != int(os.getenv("GROUP_CHAT_ID")):
+        return
+    if message.message_thread_id != 260795:
+        return
+
+    # Получаем всех пользователей с подпиской
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE subscribed_to_events = TRUE")
+    user_ids = [row[0] for row in cur.fetchall()]
+
+    for uid in user_ids:
+        try:
+            await context.bot.send_message(chat_id=uid, text=message.text)
+            # Логируем отправку
+            cur.execute(
+                "INSERT INTO logs (user_id, action, timestamp) VALUES (%s, %s, %s)",
+                (uid, "event_forwarded", datetime.datetime.now())
+            )
+        except Exception as e:
+            print(f"Не удалось отправить сообщение пользователю {uid}: {e}")
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
 
@@ -117,5 +162,6 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("events", events_command))
     app.add_handler(CommandHandler("birthday", birthday_command))
     app.add_handler(CommandHandler("notify", notify_command))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Chat(chat_id=int(os.getenv("GROUP_CHAT_ID"))), forward_from_thread))
 
     app.run_polling()
