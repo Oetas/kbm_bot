@@ -122,36 +122,64 @@ from telegram.ext import MessageHandler, filters
 
 # === Новая функция для рассылки сообщений ===
 async def forward_from_thread(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text is None:
+        return  # игнорируем не-текстовые сообщения
     message = update.message
-    if not message or not message.text:
-        return
 
-    # Проверка на нужный chat_id и message_thread_id
+    # Проверяем, что это нужная тема
     if message.chat.id != int(os.getenv("GROUP_CHAT_ID")):
         return
-    if message.message_thread_id != 260795:
+    if message.message_thread_id != 260795:  #
+        return
+    if not message.text:
         return
 
-    # Получаем всех пользователей с подпиской
+    # Подключаемся к базе данных
+    conn = psycopg2.connect(**DB_PARAMS)
+    cursor = conn.cursor()
+
+    # Получаем всех пользователей, подписанных на мероприятия
+    cursor.execute("SELECT user_id FROM users WHERE subscribed_to_events = TRUE")
+    users = cursor.fetchall()
+
+    # Рассылаем сообщение каждому пользователю
+    for (user_id,) in users:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message.text)
+
+            # Логируем рассылку
+            cursor.execute(
+                "INSERT INTO logs (user_id, action, timestamp) VALUES (%s, %s, %s)",
+                (user_id, 'event_forward', datetime.now())
+            )
+
+        except Exception as e:
+            print(f"Ошибка при отправке пользователю {user_id}: {e}")
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+async def broadcast_to_subscribed_users(bot: Bot, message_text: str):
     conn = psycopg2.connect(**DB_PARAMS)
     cur = conn.cursor()
-    cur.execute("SELECT user_id FROM users WHERE subscribed_to_events = TRUE")
+
+    cur.execute("SELECT telegram_id FROM users WHERE subscribed_to_events = true")
     user_ids = [row[0] for row in cur.fetchall()]
 
-    for uid in user_ids:
+    for user_id in user_ids:
         try:
-            await context.bot.send_message(chat_id=uid, text=message.text)
-            # Логируем отправку
-            cur.execute(
-                "INSERT INTO logs (user_id, action, timestamp) VALUES (%s, %s, %s)",
-                (uid, "event_forwarded", datetime.datetime.now())
-            )
+            await bot.send_message(chat_id=user_id, text=message_text)
+            cur.execute("INSERT INTO logs (telegram_id, event_type) VALUES (%s, %s)", (user_id, 'event_message'))
         except Exception as e:
-            print(f"Не удалось отправить сообщение пользователю {uid}: {e}")
+            print(f"Ошибка отправки пользователю {user_id}: {e}")
+            cur.execute("INSERT INTO logs (telegram_id, event_type, message) VALUES (%s, %s, %s)", (user_id, 'send_error', str(e)))
 
     conn.commit()
     cur.close()
     conn.close()
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
@@ -162,6 +190,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("events", events_command))
     app.add_handler(CommandHandler("birthday", birthday_command))
     app.add_handler(CommandHandler("notify", notify_command))
-    app.add_handler(MessageHandler(filters.TEXT & filters.Chat(chat_id=int(os.getenv("GROUP_CHAT_ID"))), forward_from_thread))
-
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Chat(chat_id=GROUP_CHAT_ID),
+        forward_from_thread
+    ))
     app.run_polling()
