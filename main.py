@@ -1,5 +1,7 @@
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackQueryHandler
 from db import add_event, get_events, update_birthday, update_notify_status, create_or_get_user, get_today_birthdays
 from utils.logger import log_user_action
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -42,10 +44,74 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Привет! Я КБМ Бот. Введи /help для списка команд.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("/add_event <текст> — добавить мероприятие (только для администраторов)\n"
-                                    "/events — список последних мероприятий\n"
-                                    "/birthday <дд.мм.гггг> — сохранить дату рождения\n"
-                                    "/notify on|off — включить/выключить уведомления")
+    keyboard = [
+        [InlineKeyboardButton("🎭 Мероприятия", callback_data="events")],
+        [InlineKeyboardButton("➕ Добавить мероприятие", callback_data="add_event")],
+        [InlineKeyboardButton("🎂 Указать дату рождения", callback_data="set_birthday")],
+        [InlineKeyboardButton("🔔 ВКЛ", callback_data="notify_on"),
+         InlineKeyboardButton("🔕 ВЫКЛ", callback_data="notify_off")],
+        [InlineKeyboardButton("📡 Пинг", callback_data="ping")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    help_text = (
+    "🛠 <b>Команды:</b>\n"
+    "/start — запуск бота\n"
+    "/help — справка\n"
+    "/add_event <code>текст</code> — добавить мероприятие (для админов)\n"
+    "/events — последние мероприятия\n"
+    "/birthday <code>дд.мм.гггг</code> — указать дату рождения\n"
+    "/notify on|off — включить/выключить уведомления\n"
+    "/ping — проверить, жив ли бот"
+    )
+
+    await update.message.reply_html(help_text, reply_markup=reply_markup)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    data = query.data
+
+    if data == "ping":
+        await query.edit_message_text("🏓 Я на месте!")
+
+    elif data == "events":
+        # Вызов команды /events как функция
+        from datetime import datetime, timedelta
+        conn = psycopg2.connect(**DB_PARAMS)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT text, created_at FROM events
+            ORDER BY created_at DESC
+            LIMIT 5
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        if rows:
+            msg = "\n\n".join([f"{text}\n🕒 {ts.strftime('%d.%m.%Y %H:%M')}" for text, ts in rows])
+        else:
+            msg = "Нет мероприятий за последнее время."
+        await query.edit_message_text(f"🎭 Последние мероприятия:\n\n{msg}")
+
+    elif data == "add_event":
+        await query.edit_message_text("📝 Введите текст нового мероприятия в формате:\n<code>/add_event текст</code>", parse_mode="HTML")
+
+    elif data == "set_birthday":
+        await query.edit_message_text("🎂 Введите дату рождения в формате:\n<code>/birthday дд.мм.гггг</code>", parse_mode="HTML")
+
+    elif data == "notify_on":
+        update_notify_status(user_id, True)
+        await query.edit_message_text("🔔 Уведомления включены.")
+
+    elif data == "notify_off":
+        update_notify_status(user_id, False)
+        await query.edit_message_text("🔕 Уведомления выключены.")
+
+    else:
+        await query.edit_message_text("❓ Неизвестная команда.")
 
 async def add_event_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -113,8 +179,8 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Уведомления включены." if value else "Уведомления выключены.")
 
 async def on_startup(app):
-    # Планировщик: проверка дней рождения каждый день в 16:52
-    scheduler.add_job(check_birthdays, "cron", hour=17, minute=15)
+    # Планировщик: проверка дней рождения каждый день в 10:00
+    scheduler.add_job(check_birthdays, "cron", hour=13, minute=14)
     scheduler.start()
 
 
@@ -180,6 +246,9 @@ async def broadcast_to_subscribed_users(bot: Bot, message_text: str):
     cur.close()
     conn.close()
 
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Бот в строю!")
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
@@ -194,4 +263,6 @@ if __name__ == '__main__':
         filters.TEXT & filters.Chat(chat_id=GROUP_CHAT_ID),
         forward_from_thread
     ))
+    app.add_handler(CommandHandler("ping", ping_command))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
