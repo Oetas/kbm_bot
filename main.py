@@ -9,11 +9,11 @@ import datetime
 from dotenv import load_dotenv
 
 DB_PARAMS = {
-    "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "host": os.getenv("DB_HOST"),
-    "port": os.getenv("DB_PORT"),
+    "dbname": os.getenv("PG_NAME"),
+    "user": os.getenv("PG_USER"),
+    "password": os.getenv("PG_PASS"),
+    "host": os.getenv("PG_HOST"),
+    "port": os.getenv("PG_PORT"),
 }
 
 load_dotenv()
@@ -139,7 +139,7 @@ async def forward_from_thread(update: Update, context: ContextTypes.DEFAULT_TYPE
     cursor = conn.cursor()
 
     # Получаем всех пользователей, подписанных на мероприятия
-    cursor.execute("SELECT user_id FROM users WHERE subscribed_to_events = TRUE")
+    cursor.execute("SELECT tg_id FROM users WHERE notify = TRUE")
     users = cursor.fetchall()
 
     # Рассылаем сообщение каждому пользователю
@@ -149,7 +149,7 @@ async def forward_from_thread(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             # Логируем рассылку
             cursor.execute(
-                "INSERT INTO logs (user_id, action, timestamp) VALUES (%s, %s, %s)",
+                "INSERT INTO logs (user_id, action, ts) VALUES (%s, %s, %s)",
                 (user_id, 'event_forward', datetime.now())
             )
 
