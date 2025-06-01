@@ -23,7 +23,7 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 
-ADMIN_IDS = [552167621, 747868890, 678405392, 552167624, 552167625]
+ADMIN_IDS = [552167621, 747868890, 678405392, 392698511, 542341313]
 
 scheduler = AsyncIOScheduler()
 
@@ -47,7 +47,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🎭 Мероприятия", callback_data="events")],
         [InlineKeyboardButton("➕ Добавить мероприятие", callback_data="add_event")],
-        [InlineKeyboardButton("🎂 Указать дату рождения", callback_data="set_birthday")],
+        [InlineKeyboardButton("🎂 Указать дату", callback_data="set_birthday"),
+         InlineKeyboardButton("📅 Моя дата", callback_data="my_birthday")],
+        [InlineKeyboardButton("✏️ Изменить дату", callback_data="edit_birthday")],
         [InlineKeyboardButton("🔔 ВКЛ", callback_data="notify_on"),
          InlineKeyboardButton("🔕 ВЫКЛ", callback_data="notify_off")],
         [InlineKeyboardButton("📡 Пинг", callback_data="ping")]
@@ -61,6 +63,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "/add_event <code>текст</code> — добавить мероприятие (для админов)\n"
     "/events — последние мероприятия\n"
     "/birthday <code>дд.мм.гггг</code> — указать дату рождения\n"
+    "/my_birthday — показать дату рождения\n"
+    "/edit_birthday — изменить дату рождения\n"
     "/notify on|off — включить/выключить уведомления\n"
     "/ping — проверить, жив ли бот"
     )
@@ -110,6 +114,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_notify_status(user_id, False)
         await query.edit_message_text("🔕 Уведомления выключены.")
 
+    elif data == "my_birthday":
+        # повтор кода из my_birthday
+        conn = psycopg2.connect(**DB_PARAMS)
+        cur = conn.cursor()
+        cur.execute("SELECT birthday FROM users WHERE tg_id = %s", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+
+        if row and row[0]:
+            bday = row[0].strftime('%d.%m.%Y')
+            await query.edit_message_text(f"🎂 Ваша дата рождения: {bday}")
+        else:
+            await query.edit_message_text(
+                "❌ У вас пока не указана дата рождения.\nВведите её командой:\n<code>/birthday дд.мм.гггг</code>",
+                parse_mode="HTML")
+
+    elif data == "edit_birthday":
+        await query.edit_message_text("✏️ Введите новую дату рождения:\n<code>/birthday дд.мм.гггг</code>",
+                                      parse_mode="HTML")
     else:
         await query.edit_message_text("❓ Неизвестная команда.")
 
@@ -250,6 +273,28 @@ async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Бот в строю!")
 
 
+async def my_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    conn = psycopg2.connect(**DB_PARAMS)
+    cur = conn.cursor()
+    cur.execute("SELECT birthday FROM users WHERE tg_id = %s", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if row and row[0]:
+        bday = row[0].strftime('%d.%m.%Y')
+        await update.message.reply_text(f"🎂 Ваша дата рождения: {bday}")
+    else:
+        await update.message.reply_text("❌ У вас пока не указана дата рождения. Введите её командой:\n<code>/birthday дд.мм.гггг</code>", parse_mode="HTML")
+
+async def edit_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "✏️ Введите новую дату рождения в формате:\n<code>/birthday дд.мм.гггг</code>",
+        parse_mode="HTML"
+    )
+
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
 
@@ -265,4 +310,6 @@ if __name__ == '__main__':
     ))
     app.add_handler(CommandHandler("ping", ping_command))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CommandHandler("my_birthday", my_birthday))
+    app.add_handler(CommandHandler("edit_birthday", edit_birthday))
     app.run_polling()
