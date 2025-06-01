@@ -10,6 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import psycopg2
 import os
 import datetime
+import logging
 from dotenv import load_dotenv
 
 DB_PARAMS = {
@@ -33,7 +34,7 @@ scheduler = AsyncIOScheduler()
 timeout = httpx.Timeout(20.0, connect=5.0)
 client = httpx.AsyncClient(timeout=timeout)
 
-application = Application.builder().token(TOKEN).request(HTTPXRequest(http_client=client)).build()
+application = Application.builder().token(TOKEN).request(HTTPXRequest()).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -80,69 +81,79 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(help_text, reply_markup=reply_markup)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    try:
+        query = update.callback_query
+        await query.answer()
 
-    user_id = query.from_user.id
-    data = query.data
+        user_id = query.from_user.id
+        data = query.data
 
-    if data == "ping":
-        await query.edit_message_text("🏓 Я на месте!")
+        if data == "ping":
+            await query.edit_message_text("🏓 Я на месте!")
 
-    elif data == "events":
-        # Вызов команды /events как функция
-        from datetime import datetime, timedelta
-        conn = psycopg2.connect(**DB_PARAMS)
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT text, created_at FROM events
-            ORDER BY created_at DESC
-            LIMIT 5
-        """)
-        rows = cur.fetchall()
-        conn.close()
+        elif data == "events":
+            from datetime import datetime
+            conn = psycopg2.connect(**DB_PARAMS)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT text, created_at FROM events
+                ORDER BY created_at DESC
+                LIMIT 5
+            """)
+            rows = cur.fetchall()
+            conn.close()
 
-        if rows:
-            msg = "\n\n".join([f"{text}\n🕒 {ts.strftime('%d.%m.%Y %H:%M')}" for text, ts in rows])
-        else:
-            msg = "Нет мероприятий за последнее время."
-        await query.edit_message_text(f"🎭 Последние мероприятия:\n\n{msg}")
+            if rows:
+                msg = "\n\n".join([f"{text}\n🕒 {ts.strftime('%d.%m.%Y %H:%M')}" for text, ts in rows])
+            else:
+                msg = "Нет мероприятий за последнее время."
+            await query.edit_message_text(f"🎭 Последние мероприятия:\n\n{msg}")
 
-    elif data == "add_event":
-        await query.edit_message_text("📝 Введите текст нового мероприятия в формате:\n<code>/add_event текст</code>", parse_mode="HTML")
-
-    elif data == "set_birthday":
-        await query.edit_message_text("🎂 Введите дату рождения в формате:\n<code>/birthday дд.мм.гггг</code>", parse_mode="HTML")
-
-    elif data == "notify_on":
-        update_notify_status(user_id, True)
-        await query.edit_message_text("🔔 Уведомления включены.")
-
-    elif data == "notify_off":
-        update_notify_status(user_id, False)
-        await query.edit_message_text("🔕 Уведомления выключены.")
-
-    elif data == "my_birthday":
-        # повтор кода из my_birthday
-        conn = psycopg2.connect(**DB_PARAMS)
-        cur = conn.cursor()
-        cur.execute("SELECT birthday FROM users WHERE tg_id = %s", (user_id,))
-        row = cur.fetchone()
-        conn.close()
-
-        if row and row[0]:
-            bday = row[0].strftime('%d.%m.%Y')
-            await query.edit_message_text(f"🎂 Ваша дата рождения: {bday}")
-        else:
+        elif data == "add_event":
             await query.edit_message_text(
-                "❌ У вас пока не указана дата рождения.\nВведите её командой:\n<code>/birthday дд.мм.гггг</code>",
+                "📝 Введите текст нового мероприятия в формате:\n<code>/add_event текст</code>",
                 parse_mode="HTML")
 
-    elif data == "edit_birthday":
-        await query.edit_message_text("✏️ Введите новую дату рождения:\n<code>/birthday дд.мм.гггг</code>",
-                                      parse_mode="HTML")
-    else:
-        await query.edit_message_text("❓ Неизвестная команда.")
+        elif data == "set_birthday":
+            await query.edit_message_text(
+                "🎂 Введите дату рождения в формате:\n<code>/birthday дд.мм.гггг</code>",
+                parse_mode="HTML")
+
+        elif data == "notify_on":
+            update_notify_status(user_id, True)
+            await query.edit_message_text("🔔 Уведомления включены.")
+
+        elif data == "notify_off":
+            update_notify_status(user_id, False)
+            await query.edit_message_text("🔕 Уведомления выключены.")
+
+        elif data == "my_birthday":
+            conn = psycopg2.connect(**DB_PARAMS)
+            cur = conn.cursor()
+            cur.execute("SELECT birthday FROM users WHERE tg_id = %s", (user_id,))
+            row = cur.fetchone()
+            conn.close()
+
+            if row and row[0]:
+                bday = row[0].strftime('%d.%m.%Y')
+                await query.edit_message_text(f"🎂 Ваша дата рождения: {bday}")
+            else:
+                await query.edit_message_text(
+                    "❌ У вас пока не указана дата рождения.\nВведите её командой:\n<code>/birthday дд.мм.гггг</code>",
+                    parse_mode="HTML")
+
+        elif data == "edit_birthday":
+            await query.edit_message_text(
+                "✏️ Введите новую дату рождения:\n<code>/birthday дд.мм.гггг</code>",
+                parse_mode="HTML")
+
+        else:
+            await query.edit_message_text("❓ Неизвестная команда.")
+
+    except Exception as e:
+        logging.exception("Ошибка в button_handler:")
+        await update.callback_query.edit_message_text("⚠️ Произошла ошибка при обработке команды.")
+
 
 async def add_event_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -219,7 +230,7 @@ from telegram.ext import MessageHandler, filters
 
 # === Новая функция для рассылки сообщений ===
 async def forward_from_thread(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text is None:
+    if update.message is None or update.message.text is None:
         return  # игнорируем не-текстовые сообщения
     message = update.message
 
