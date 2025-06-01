@@ -1,7 +1,9 @@
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler
+from telegram.ext import CallbackQueryHandler, Application
+import httpx
+from telegram.request import HTTPXRequest
 from db import add_event, get_events, update_birthday, update_notify_status, create_or_get_user, get_today_birthdays
 from utils.logger import log_user_action
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -26,6 +28,12 @@ GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 ADMIN_IDS = [552167621, 747868890, 678405392, 392698511, 542341313]
 
 scheduler = AsyncIOScheduler()
+
+# Кастомный таймаут: 20 секунд
+timeout = httpx.Timeout(20.0, connect=5.0)
+client = httpx.AsyncClient(timeout=timeout)
+
+application = Application.builder().token(TOKEN).request(HTTPXRequest(http_client=client)).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
